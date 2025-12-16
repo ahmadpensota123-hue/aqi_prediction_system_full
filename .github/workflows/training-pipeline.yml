@@ -1,0 +1,86 @@
+# ========================================
+# Training Pipeline - Daily Model Training
+# ========================================
+# This workflow runs daily to:
+# - Fetch training data from Feature Store
+# - Train all ML models
+# - Evaluate and compare models
+# - Save best models to registry
+
+name: Training Pipeline
+
+on:
+  schedule:
+    # Run daily at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:  # Allow manual trigger
+    inputs:
+      use_synthetic:
+        description: 'Use synthetic data for testing'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  training-pipeline:
+    name: Run Training Pipeline
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      
+      - name: Cache pip dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Run Training Pipeline
+        run: |
+          python -c "
+          from pipelines.training_pipeline import training_pipeline
+          results = training_pipeline(
+              use_synthetic_data=${{ inputs.use_synthetic || 'True' }},
+              n_samples=1000
+          )
+          print(results)
+          "
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+          HOPSWORKS_API_KEY: ${{ secrets.HOPSWORKS_API_KEY }}
+          MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
+      
+      - name: Upload trained models
+        uses: actions/upload-artifact@v3
+        with:
+          name: trained-models
+          path: models/
+          retention-days: 30
+      
+      - name: Upload training reports
+        uses: actions/upload-artifact@v3
+        with:
+          name: training-reports
+          path: data/reports/
+          retention-days: 30
+      
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "Training pipeline failed! Check logs for details."

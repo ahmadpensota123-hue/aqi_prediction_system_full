@@ -1,0 +1,111 @@
+# ========================================
+# Docker Compose - AQI Prediction System
+# ========================================
+# Orchestrates all services for the AQI prediction system
+#
+# Usage:
+#   docker-compose up           # Start all services
+#   docker-compose up -d        # Start in background
+#   docker-compose down         # Stop all services
+#   docker-compose logs -f api  # View API logs
+
+version: '3.8'
+
+services:
+  # ========================
+  # FastAPI Service
+  # ========================
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.api
+    container_name: aqi-api
+    ports:
+      - "8000:8000"
+    env_file:
+      - ../.env
+    environment:
+      - APP_ENV=production
+      - LOG_LEVEL=INFO
+    volumes:
+      - ../models:/app/models:ro # Mount models directory
+      - ../data:/app/data
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8000/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - aqi-network
+
+  # ========================
+  # Streamlit Dashboard
+  # ========================
+  dashboard:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.dashboard
+    container_name: aqi-dashboard
+    ports:
+      - "8501:8501"
+    env_file:
+      - ../.env
+    environment:
+      - API_URL=http://api:8000
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - aqi-network
+
+  # ========================
+  # Prefect Server (Optional)
+  # ========================
+  prefect:
+    image: prefecthq/prefect:2-python3.11
+    container_name: aqi-prefect
+    ports:
+      - "4200:4200"
+    environment:
+      - PREFECT_SERVER_API_HOST=0.0.0.0
+    command: prefect server start
+    restart: unless-stopped
+    networks:
+      - aqi-network
+    profiles:
+      - orchestration
+
+  # ========================
+  # MLflow Tracking Server (Optional)
+  # ========================
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:latest
+    container_name: aqi-mlflow
+    ports:
+      - "5000:5000"
+    environment:
+      - MLFLOW_TRACKING_URI=sqlite:///mlflow.db
+    command: mlflow server --host 0.0.0.0 --port 5000
+    volumes:
+      - mlflow-data:/mlflow
+    restart: unless-stopped
+    networks:
+      - aqi-network
+    profiles:
+      - mlops
+
+# ========================
+# Networks
+# ========================
+networks:
+  aqi-network:
+    driver: bridge
+
+# ========================
+# Volumes
+# ========================
+volumes:
+  mlflow-data:

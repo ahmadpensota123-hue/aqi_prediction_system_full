@@ -1,0 +1,14 @@
+venv/
+__pycache__/
+.git/
+.env
+.pytest_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+logs/
+# Exclude data from build context if not needed (api mounts them)
+data/
+# models/ # Keep models in context for standalone image builds

@@ -1,0 +1,50 @@
+# ========================================
+# Dockerfile for ML Pipeline
+# ========================================
+# Contains all ML dependencies for training pipelines
+#
+# Build: docker build -t aqi-pipeline -f docker/Dockerfile.pipeline .
+# Run:   docker run aqi-pipeline python -m pipelines.training_pipeline
+
+FROM python:3.11-slim
+
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app
+
+# Set working directory
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    curl \
+    git \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Copy requirements
+COPY requirements.txt .
+
+# Install Python dependencies
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY src/ ./src/
+COPY pipelines/ ./pipelines/
+COPY data/ ./data/
+COPY models/ ./models/
+COPY .env.example ./.env
+
+# Create directories
+RUN mkdir -p data/raw data/processed data/features models
+
+# Create non-root user
+RUN useradd --create-home --shell /bin/bash appuser && \
+    chown -R appuser:appuser /app
+USER appuser
+
+# Default command
+CMD ["python", "-m", "pipelines.training_pipeline"]
